@@ -20,17 +20,14 @@ cp .env.example .env
 # Edit .env with your credentials
 ```
 
-`.env` file contents:
-```bash
-DATABRICKS_HOST=https://your-workspace.databricks.com
-DATABRICKS_TOKEN=dapi...
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
 ### Generate Applications
-
 ```bash
 cd klaudbiusz
+
+
+# make sure app folder is empty
+cli/archive_evaluation.sh
+cli/cleanup_evaluation.sh
 
 # Generate a single app (Claude backend, default)
 uv run cli/single_run.py "Create a customer churn analysis dashboard"
@@ -67,7 +64,7 @@ uv run cli/evaluate_all.py --skip 10 --limit 5          # Skip first 10, evaluat
 uv run cli/evaluate_app.py ../app/customer-churn-analysis
 ```
 
-**Results are automatically logged to MLflow:** Navigate to `ML → Experiments → /Shared/klaudbiusz-evaluations` in Databricks UI.
+**Results are automatically logged to MLflow:** Navigate to `ML → Experiments → /Shared/klaudbiusz-evaluations` in Databricks UI / Googfooding.
 
 ## Evaluation Framework
 
