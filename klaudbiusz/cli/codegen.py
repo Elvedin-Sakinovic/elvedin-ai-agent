@@ -229,6 +229,17 @@ Use up to 10 tools per call to speed up the process.\n"""
             app_dir=self.scaffold_tracker.app_dir,
         )
 
+        # Save generation_metrics.json to app directory for evaluation
+        if self.scaffold_tracker.app_dir:
+            import json
+            metrics_file = Path(self.scaffold_tracker.app_dir) / "generation_metrics.json"
+            metrics_file.write_text(json.dumps({
+                "cost_usd": metrics["cost_usd"],
+                "input_tokens": metrics["input_tokens"],
+                "output_tokens": metrics["output_tokens"],
+                "turns": metrics["turns"],
+            }, indent=2))
+
         return metrics
 
     async def _log_tool_use(self, block: ToolUseBlock, truncate) -> None:

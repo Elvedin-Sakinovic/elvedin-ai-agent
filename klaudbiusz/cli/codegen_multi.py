@@ -221,6 +221,18 @@ class LiteLLMAgent:
                 logger.error(f"❌ Error during generation: {e}")
                 raise
 
+        # Save generation_metrics.json to app directory for evaluation
+        if self.scaffold_tracker.app_dir:
+            from pathlib import Path
+            import json
+            metrics_file = Path(self.scaffold_tracker.app_dir) / "generation_metrics.json"
+            metrics_file.write_text(json.dumps({
+                "cost_usd": total_cost,
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "turns": turn,
+            }, indent=2))
+
         return GenerationMetrics(
             cost_usd=total_cost,
             input_tokens=total_input_tokens,
