@@ -250,6 +250,12 @@ async def evaluate_app_async(
         else:
             print("  [5-7/7] Skipping DB/data/UI checks (runtime failed)")
 
+    except Exception as e:
+        issues.append(f"Evaluation error: {str(e)}")
+        print(f"  ⚠️  Exception during evaluation: {e}")
+
+    # Calculate DevX metrics (run even if evaluation failed)
+    try:
         # Metric 8: Local runability
         local_score, local_details = check_local_runability(app_dir, template)
         metrics.local_runability_score = local_score
@@ -267,9 +273,12 @@ async def evaluate_app_async(
             issues.append(
                 f"Deployability concerns ({deploy_score}/5): {'; '.join([d for d in deploy_details if '✗' in d])}"
             )
+    except Exception as e:
+        print(f"  ⚠️  Could not calculate DevX metrics: {e}")
 
-        # Calculate composite score
-        from eval_metrics import calculate_appeval_100, eff_units
+    # Calculate composite score (run even if evaluation failed)
+    try:
+        from eval_metrics import calculate_appeval_100
 
         metrics.appeval_100 = calculate_appeval_100(
             build_success=metrics.build_success,
@@ -282,44 +291,35 @@ async def evaluate_app_async(
             local_runability_score=metrics.local_runability_score,
             deployability_score=metrics.deployability_score,
         )
-
-        # Calculate efficiency metric
-        generation_metrics_file = app_dir / "generation_metrics.json"
-        if generation_metrics_file.exists():
-            generation_metrics = json.loads(generation_metrics_file.read_text())
-            tokens = generation_metrics.get("input_tokens", 0) + generation_metrics.get("output_tokens", 0)
-            turns = generation_metrics.get("turns")
-            validations = generation_metrics.get("validation_runs")
-
-            metrics.eff_units = eff_units(
-                tokens_used=tokens if tokens > 0 else None, agent_turns=turns, validation_runs=validations
-            )
-
-        # Add LOC count
-        metrics.total_loc = sum(1 for f in app_dir.rglob("*.ts") if f.is_file() and "node_modules" not in str(f))
-
     except Exception as e:
-        issues.append(f"Evaluation error: {str(e)}")
-        print(f"  ⚠️  Exception during evaluation: {e}")
+        print(f"  ⚠️  Could not calculate appeval_100: {e}")
 
     # Calculate efficiency metric (run even if evaluation failed)
-    try:
-        import json
-        from eval_metrics import eff_units
-        generation_metrics_file = app_dir / "generation_metrics.json"
-        if generation_metrics_file.exists():
-            generation_metrics = json.loads(generation_metrics_file.read_text())
-            tokens = generation_metrics.get("input_tokens", 0) + generation_metrics.get("output_tokens", 0)
-            turns = generation_metrics.get("turns")
-            validations = generation_metrics.get("validation_runs")
+    if metrics.eff_units is None:
+        try:
+            import json
+            from eval_metrics import eff_units
+            generation_metrics_file = app_dir / "generation_metrics.json"
+            if generation_metrics_file.exists():
+                generation_metrics = json.loads(generation_metrics_file.read_text())
+                tokens = generation_metrics.get("input_tokens", 0) + generation_metrics.get("output_tokens", 0)
+                turns = generation_metrics.get("turns")
+                validations = generation_metrics.get("validation_runs")
 
-            metrics.eff_units = eff_units(
-                tokens_used=tokens if tokens > 0 else None,
-                agent_turns=turns,
-                validation_runs=validations
-            )
-    except Exception as e:
-        print(f"  ⚠️  Could not calculate efficiency: {e}")
+                metrics.eff_units = eff_units(
+                    tokens_used=tokens if tokens > 0 else None,
+                    agent_turns=turns,
+                    validation_runs=validations
+                )
+        except Exception as e:
+            print(f"  ⚠️  Could not calculate efficiency: {e}")
+
+    # Calculate LOC count (run even if evaluation failed)
+    if metrics.total_loc == 0:
+        try:
+            metrics.total_loc = sum(1 for f in app_dir.rglob("*.ts") if f.is_file() and "node_modules" not in str(f))
+        except Exception as e:
+            print(f"  ⚠️  Could not calculate LOC: {e}")
 
     print(f"\nIssues: {len(issues)}")
 
