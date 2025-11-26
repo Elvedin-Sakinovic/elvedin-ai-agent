@@ -15,9 +15,9 @@ def run(
     backend: str = "claude",
     model: str | None = None,
     wipe_db: bool = True,
-    use_subagents: bool = False,
     mcp_binary: str | None = None,
     mcp_json: str | None = None,
+    mcp_args: list[str] | None = None,
 ):
     """Run app builder with given prompt.
 
@@ -27,13 +27,12 @@ def run(
         backend: Backend to use ("claude" or "litellm", default: "claude")
         model: LLM model (required if backend=litellm, e.g., "openrouter/minimax/minimax-m2")
         wipe_db: Whether to wipe database on start
-        use_subagents: Whether to enable subagent delegation (claude backend only)
         mcp_binary: Optional path to pre-built edda-mcp binary (default: use cargo run)
         mcp_json: Optional path to JSON config file for edda_mcp
+        mcp_args: Optional list of args passed to the MCP server (overrides defaults)
 
     Usage:
         # Claude backend (default)
-        python main.py "build dashboard" --use_subagents
         python main.py "build dashboard" --app_name=my-dashboard
 
         # LiteLLM backend
@@ -42,6 +41,9 @@ def run(
 
         # Custom MCP config
         python main.py "build dashboard" --mcp_json=./config/databricks-cli.json
+
+        # Custom MCP args
+        python main.py "build dashboard" --mcp_args='["experimental", "apps-mcp"]'
     """
     if app_name is None:
         app_name = f"app-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -55,9 +57,9 @@ def run(
                 app_name=app_name,
                 wipe_db=wipe_db,
                 suppress_logs=suppress_logs,
-                use_subagents=use_subagents,
                 mcp_binary=mcp_binary,
                 mcp_json_path=mcp_json,
+                mcp_args=mcp_args,
             )
             metrics = builder.run(prompt, wipe_db=wipe_db)
         case "litellm":
@@ -68,6 +70,7 @@ def run(
                 model=model,
                 mcp_binary=mcp_binary,
                 mcp_json_path=mcp_json,
+                mcp_args=mcp_args,
                 suppress_logs=suppress_logs,
             )
             litellm_metrics = builder_litellm.run(prompt)

@@ -8,7 +8,6 @@ from typing import NotRequired, TypedDict
 from uuid import UUID, uuid4
 
 from claude_agent_sdk import (
-    AgentDefinition,
     AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
@@ -19,6 +18,7 @@ from claude_agent_sdk import (
     query,
 )
 from dotenv import load_dotenv
+
 from cli.utils.shared import ScaffoldTracker, Tracker, build_mcp_command, setup_logging, validate_mcp_manifest
 
 try:
@@ -44,35 +44,6 @@ class ToolInput:
     prompt: str = ""
 
 
-def _parse_agent_definition(agent_file: Path) -> tuple[dict[str, str], str] | None:
-    """Parse agent markdown file with YAML frontmatter.
-
-    Returns:
-        Tuple of (frontmatter_dict, content) or None if parsing fails
-    """
-    if not agent_file.exists():
-        return None
-
-    content = agent_file.read_text()
-
-    # frontmatter must start and end with ---
-    if not content.startswith("---"):
-        return None
-
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return None
-
-    # parse simple yaml-like frontmatter manually
-    frontmatter = {}
-    for line in parts[1].strip().split("\n"):
-        if ":" in line:
-            key, value = line.split(":", 1)
-            frontmatter[key.strip()] = value.strip()
-
-    return frontmatter, parts[2].strip()
-
-
 class GenerationMetrics(TypedDict):
     cost_usd: float
     input_tokens: int
@@ -88,22 +59,22 @@ class ClaudeAppBuilder:
         app_name: str,
         wipe_db: bool = True,
         suppress_logs: bool = False,
-        use_subagents: bool = False,
         mcp_binary: str | None = None,
         mcp_json_path: str | None = None,
+        mcp_args: list[str] | None = None,
         output_dir: str | None = None,
     ):
         load_dotenv()
-        self.project_root = Path(__file__).parent.parent.parent
+        self.project_root = Path(__file__).parent.parent.parent.parent
         self.mcp_manifest = validate_mcp_manifest(mcp_binary, self.project_root)
 
         self.wipe_db = wipe_db
         self.run_id: UUID = uuid4()
         self.app_name = app_name
-        self.use_subagents = use_subagents
         self.suppress_logs = suppress_logs
         self.mcp_binary = mcp_binary
         self.mcp_json_path = mcp_json_path
+        self.mcp_args = mcp_args
         self.output_dir = Path(output_dir) if output_dir else Path.cwd() / "app"
         self.tracker = Tracker(self.run_id, app_name, suppress_logs)
         self.scaffold_tracker = ScaffoldTracker()
@@ -115,30 +86,14 @@ class ClaudeAppBuilder:
         await self.tracker.init(wipe_db=self.wipe_db)
 
         agents = {}
-        if self.use_subagents:
-            agents_dir = self.project_root / "klaudbiusz" / "agents"
-            dataresearch_file = agents_dir / "dataresearch.md"
-
-            if parsed := _parse_agent_definition(dataresearch_file):
-                frontmatter, content = parsed
-                tools_str = frontmatter.get("tools", "")
-                tools = [t.strip() for t in tools_str.split(",")] if tools_str else None
-
-                agents["dataresearch"] = AgentDefinition(
-                    description=frontmatter.get("description", ""),
-                    prompt=content,
-                    tools=tools,
-                    model=frontmatter.get("model"),  # type: ignore[arg-type]
-                )
 
         # workflow and template best practices are now in the MCP tool description
-        base_instructions = "Use Edda MCP tools to scaffold, build, and test the app as needed.\n Use data from Databricks when relevant.\n"
-
-        if self.use_subagents:
-            base_instructions += """When you need to explore Databricks tables, schemas, or execute SQL queries, use the Task tool to delegate to the 'dataresearch' subagent. Do NOT use databricks_* tools directly.\n"""
-
-        base_instructions += """Be concise and to the point in your responses.\n
-Use up to 10 tools per call to speed up the process.\n"""
+        base_instructions = """Use MCP tools to scaffold, build, and test the app as needed.
+Use data from Databricks when relevant.
+Be concise and to the point in your responses.
+Use up to 10 tools per call to speed up the process.
+Never deploy the app, just scaffold and build it.
+"""
 
         disallowed_tools = [
             "NotebookEdit",
@@ -146,12 +101,8 @@ Use up to 10 tools per call to speed up the process.\n"""
             "WebFetch",
         ]
 
-        # NOTE: We cannot use disallowed_tools to block Databricks tools from the main agent
-        # because disallowed_tools applies globally to ALL agents (including subagents).
-        # The CLI doesn't support per-agent tool permissions yet.
-        # Instead, we rely on system prompt instructions to enforce delegation.
+        command, args = build_mcp_command(self.mcp_binary, self.mcp_manifest, self.mcp_json_path, self.mcp_args)
 
-        command, args = build_mcp_command(self.mcp_binary, self.mcp_manifest, self.mcp_json_path)
         mcp_config = {
             "type": "stdio",
             "command": command,

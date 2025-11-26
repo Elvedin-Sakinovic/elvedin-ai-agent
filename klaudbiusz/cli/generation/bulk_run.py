@@ -46,10 +46,10 @@ def run_single_generation(
     backend: str,
     model: str | None,
     wipe_db: bool = False,
-    use_subagents: bool = False,
     suppress_logs: bool = True,
     mcp_binary: str | None = None,
     mcp_json: str | None = None,
+    mcp_args: list[str] | None = None,
     output_dir: str | None = None,
 ) -> RunResult:
     # re-apply litellm patch in worker process (joblib uses spawn/fork)
@@ -70,9 +70,9 @@ def run_single_generation(
                     app_name=app_name,
                     wipe_db=wipe_db,
                     suppress_logs=suppress_logs,
-                    use_subagents=use_subagents,
                     mcp_binary=mcp_binary,
                     mcp_json_path=mcp_json,
+                    mcp_args=mcp_args,
                     output_dir=output_dir,
                 )
                 metrics = codegen.run(prompt, wipe_db=wipe_db)
@@ -85,6 +85,7 @@ def run_single_generation(
                     model=model,
                     mcp_binary=mcp_binary,
                     mcp_json_path=mcp_json,
+                    mcp_args=mcp_args,
                     suppress_logs=suppress_logs,
                     output_dir=output_dir,
                 )
@@ -147,20 +148,20 @@ def main(
     model: str | None = None,
     wipe_db: bool = False,
     n_jobs: int = -1,
-    use_subagents: bool = False,
     mcp_binary: str | None = None,
     mcp_json: str | None = None,
+    mcp_args: list[str] | None = None,
     output_dir: str | None = None,
 ) -> None:
     """Bulk app generation from predefined prompt sets.
 
     Args:
-        prompts: Prompt set to use ("databricks" or "test", default: "databricks")
+        prompts: Prompt set to use ("databricks", "databricks_v2", or "test", default: "databricks")
         backend: Backend to use ("claude" or "litellm", default: "claude")
         model: LLM model (required if backend=litellm, e.g., "openrouter/minimax/minimax-m2")
         wipe_db: Whether to wipe database on start
         n_jobs: Number of parallel jobs (-1 for all cores)
-        use_subagents: Whether to enable subagent delegation (claude backend only)
+        mcp_args: Optional list of args passed to the MCP server (overrides defaults)
         mcp_binary: Optional path to pre-built edda-mcp binary (default: use cargo run)
         mcp_json: Optional path to JSON config file for edda_mcp
         output_dir: Custom output directory for generated apps (default: ./app)
@@ -168,6 +169,9 @@ def main(
     Usage:
         # Claude backend (default) with databricks prompts (default)
         python bulk_run.py
+
+        # Claude backend with databricks_v2 prompts
+        python bulk_run.py --prompts=databricks_v2
 
         # Claude backend with test prompts
         python bulk_run.py --prompts=test
@@ -195,10 +199,12 @@ def main(
     match prompts:
         case "databricks":
             from cli.generation.prompts.databricks import PROMPTS as selected_prompts
+        case "databricks_v2":
+            from cli.generation.prompts.databricks_v2 import PROMPTS as selected_prompts
         case "test":
             from cli.generation.prompts.web import PROMPTS as selected_prompts
         case _:
-            raise ValueError(f"Unknown prompt set: {prompts}. Use 'databricks' or 'test'")
+            raise ValueError(f"Unknown prompt set: {prompts}. Use 'databricks', 'databricks_v2', or 'test'")
 
     # validate backend-specific requirements
     if backend == "litellm" and not model:
@@ -216,14 +222,13 @@ def main(
     print(f"Parallel jobs: {n_jobs}")
     if backend == "claude":
         print(f"Wipe DB: {wipe_db}")
-        print(f"Use subagents: {use_subagents}")
     print(f"MCP binary: {mcp_binary if mcp_binary else 'cargo run (default)'}")
     print(f"Output dir: {output_dir if output_dir else './app (default)'}\n")
 
     # generate all apps
     results: list[RunResult] = Parallel(n_jobs=n_jobs, backend="loky", verbose=10)(  # type: ignore[assignment]
         delayed(run_single_generation)(
-            app_name, prompt, backend, model, wipe_db, use_subagents, suppress_logs, mcp_binary, mcp_json, output_dir
+            app_name, prompt, backend, model, wipe_db, suppress_logs, mcp_binary, mcp_json, mcp_args, output_dir
         )
         for app_name, prompt in selected_prompts.items()
     )
